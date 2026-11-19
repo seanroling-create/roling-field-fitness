@@ -1,5 +1,5 @@
-Roling Field Fitness v4 — visual hierarchy update.
+Roling Field Fitness v5
 
-Warm Up, Training, and Session Notes remain the most prominent gold section banners. Warm-up round counts (such as 2 Rounds) and numbered training blocks (such as 1) 5 Rounds) now share a matching medium-prominence teal/gold heading style. Individual exercises remain ordinary text.
+Changes: Bullets mark each exercise line; wrapped description/instruction lines are visually subordinate. Weight fields and exercise description/timer buttons are slightly smaller. Retains v4 features and local storage keys.
 
-Upload all files inside roling_app to the root of your existing GitHub repository and replace existing files. The service worker cache version has been updated to v4. Export a backup before updating; this release does not change workout record storage.
+Upload all files INSIDE roling_app to the root of your existing GitHub Pages repository, replacing matching files. Export your data backup first.
