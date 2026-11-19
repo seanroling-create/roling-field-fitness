@@ -204,3 +204,71 @@ renderWorkout = function() {
 };
 
 tidyWorkoutDescriptions();
+
+// Version 6.3: fix explanatory notes and SDC layout
+function refineWorkoutLayoutV63() {
+  document.querySelectorAll('.workout-section').forEach(section => {
+    const items = Array.from(
+      section.querySelectorAll('.v6-exercise')
+    );
+
+    items.forEach(item => {
+      if (!item.isConnected) return;
+
+      const desc = item.querySelector('.v6-description');
+      if (!desc) return;
+
+      const text = desc.textContent
+        .trim()
+        .replace(/^•\s*/, '');
+
+      // Explanations of named complexes are notes,
+      // not additional exercise requirements.
+      if (/^(?:Mr\. Spectacular|Craig Special|Man Maker|Renegade Man Maker|Scotty Bob)\s*:/i.test(text)) {
+        item.classList.remove('exercise-item');
+        item.classList.add('instruction-item', 'v63-note');
+
+        desc.querySelector('.exercise-bullet')?.remove();
+        item.querySelector('.v6-actions')?.remove();
+        item.querySelectorAll('.inputline').forEach(el => el.remove());
+      }
+
+      // Keep the entire SDC description before its controls.
+      if (/^SDC PARTIAL\b/i.test(text)) {
+        const next = item.nextElementSibling;
+        const nextDesc = next?.querySelector('.v6-description');
+        const nextText = nextDesc?.textContent
+          .trim()
+          .replace(/^•\s*/, '') || '';
+
+        if (/^out\/back\)/i.test(nextText)) {
+          desc.append(document.createTextNode(' ' + nextText));
+          next.remove();
+        }
+      }
+    });
+  });
+}
+
+const v63style = document.createElement('style');
+v63style.textContent = `
+  .v63-note .v6-description {
+    color: #a5b4bd !important;
+    opacity: 1 !important;
+    font-size: 0.94em;
+    line-height: 1.5;
+  }
+  .v63-note {
+    padding-top: 4px;
+    padding-bottom: 8px;
+  }
+`;
+document.head.appendChild(v63style);
+
+const previousRenderWorkoutV63 = renderWorkout;
+renderWorkout = function() {
+  previousRenderWorkoutV63();
+  refineWorkoutLayoutV63();
+};
+
+refineWorkoutLayoutV63();
