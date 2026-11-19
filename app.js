@@ -103,3 +103,52 @@ v6style.textContent = `
   }
 `;
 document.head.appendChild(v6style);
+
+// Version 6.1: restore exercise bullets and remove dashed lines
+function fixWorkoutFormatting() {
+  document.querySelectorAll('.v6-exercise').forEach(item => {
+    const description = item.querySelector('.v6-description');
+    if (!description) return;
+
+    const text = description.textContent.trim().replace(/^•\s*/, '');
+    const isRest = /^Rest\b/i.test(text);
+    const isInstruction = /^(?:For full official|Next week:|Use |After Week|One complete|These are|Official |Note:|Complete sequence|Running paces\.|Between rounds\.)/i.test(text);
+
+    if (!isRest && !isInstruction) {
+      item.classList.add('exercise-item');
+      item.classList.remove('instruction-item');
+      if (!description.querySelector('.exercise-bullet')) {
+        const bullet = document.createElement('span');
+        bullet.className = 'exercise-bullet';
+        bullet.textContent = '•';
+        bullet.setAttribute('aria-hidden', 'true');
+        description.prepend(bullet, ' ');
+      }
+    }
+  });
+}
+
+const v61style = document.createElement('style');
+v61style.textContent = `
+  .v6-exercise,
+  .v6-exercise .inputline,
+  .v6-exercise .v6-description,
+  .v6-exercise .v6-actions {
+    border: none !important;
+    border-top: none !important;
+    border-bottom: none !important;
+    box-shadow: none !important;
+  }
+  .v6-exercise.exercise-item .v6-description {
+    color: inherit !important;
+    opacity: 1 !important;
+  }
+`;
+document.head.appendChild(v61style);
+
+const originalRenderWorkoutV61 = renderWorkout;
+renderWorkout = function() {
+  originalRenderWorkoutV61();
+  fixWorkoutFormatting();
+};
+fixWorkoutFormatting();
