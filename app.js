@@ -272,3 +272,78 @@ renderWorkout = function() {
 };
 
 refineWorkoutLayoutV63();
+
+// Version 6.4: place complex descriptions beside their exercises
+function positionComplexDescriptionsV64() {
+  const names = [
+    'Mr. Spectacular',
+    'Craig Special',
+    'Man Maker',
+    'Renegade Man Maker',
+    'Scotty Bob'
+  ];
+
+  document.querySelectorAll('.workout-section').forEach(section => {
+    const items = Array.from(
+      section.querySelectorAll('.v6-exercise')
+    );
+
+    items.forEach(note => {
+      if (!note.classList.contains('v63-note')) return;
+
+      const description = note.querySelector('.v6-description');
+      if (!description) return;
+
+      const noteText = description.textContent.trim();
+      const name = names.find(n =>
+        noteText.toLowerCase().startsWith(n.toLowerCase() + ':')
+      );
+      if (!name) return;
+
+      // Look for the actual prescribed exercise in the same section.
+      const exercise = items.find(item => {
+        if (item === note || item.classList.contains('v63-note')) {
+          return false;
+        }
+
+        const text = item.querySelector('.v6-description')
+          ?.textContent.trim() || '';
+
+        return text.toLowerCase().includes(name.toLowerCase())
+          && !text.toLowerCase().startsWith(name.toLowerCase() + ':');
+      });
+
+      if (!exercise) return;
+
+      // Put the explanation immediately after the exercise text,
+      // before its Demo and weight controls.
+      const exerciseDescription = exercise.querySelector('.v6-description');
+
+      if (exerciseDescription) {
+        exerciseDescription.insertAdjacentElement('afterend', description);
+        description.classList.add('v64-complex-note');
+        note.remove();
+      }
+    });
+  });
+}
+
+const v64style = document.createElement('style');
+v64style.textContent = `
+  .v64-complex-note {
+    color: #a5b4bd !important;
+    opacity: 1 !important;
+    font-size: 0.88em;
+    line-height: 1.5;
+    margin: 7px 0 5px 15px;
+  }
+`;
+document.head.appendChild(v64style);
+
+const previousRenderWorkoutV64 = renderWorkout;
+renderWorkout = function() {
+  previousRenderWorkoutV64();
+  positionComplexDescriptionsV64();
+};
+
+positionComplexDescriptionsV64();
