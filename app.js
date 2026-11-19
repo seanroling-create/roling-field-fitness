@@ -152,3 +152,55 @@ renderWorkout = function() {
   fixWorkoutFormatting();
 };
 fixWorkoutFormatting();
+
+// Version 6.2: join split descriptions and hide redundant SDC note
+function tidyWorkoutDescriptions() {
+  document.querySelectorAll('.workout-section').forEach(section => {
+    const items = Array.from(section.querySelectorAll('.v6-exercise'));
+
+    items.forEach(item => {
+      if (!item.isConnected) return;
+
+      const desc = item.querySelector('.v6-description');
+      if (!desc) return;
+
+      const text = desc.textContent.trim().replace(/^•\s*/, '');
+
+      // Hide the redundant SDC reference.
+      if (/^For full official SDC sequence\b/i.test(text)) {
+        item.remove();
+        return;
+      }
+
+      // Join a continuation to the preceding exercise or note.
+      const continuation =
+        /^(?:complete sequence\s*=|running paces\b)/i.test(text);
+
+      if (!continuation) return;
+
+      const previous = item.previousElementSibling;
+      if (!previous || !previous.classList.contains('v6-exercise')) return;
+
+      const previousDesc = previous.querySelector('.v6-description');
+      if (!previousDesc) return;
+
+      previousDesc.append(
+        document.createTextNode(' ' + text)
+      );
+
+      item.remove();
+    });
+
+    // Join "One" with "complete sequence = 1 rep."
+    // The previous loop handles the continuation without
+    // changing any saved workout data.
+  });
+}
+
+const previousRenderWorkoutV62 = renderWorkout;
+renderWorkout = function() {
+  previousRenderWorkoutV62();
+  tidyWorkoutDescriptions();
+};
+
+tidyWorkoutDescriptions();
