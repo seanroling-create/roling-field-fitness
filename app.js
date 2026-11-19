@@ -19,3 +19,87 @@ function settings(){main.innerHTML=`<h2>Data & installation</h2><div class="card
 function render(){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));if(tab==='workout')renderWorkout();else if(tab==='records')records();else if(tab==='timer')timerPage();else if(tab==='notes')notesPage();else settings()}
 document.addEventListener('click',e=>{let b=e.target.closest('button');if(!b)return;if(b.dataset.tab){tab=b.dataset.tab;render()}else if(b.dataset.week){week=+b.dataset.week;localStorage.setItem('roling-week',week);render()}else if(b.dataset.session){session=+b.dataset.session;localStorage.setItem('roling-session',session);render()}else if(b.dataset.desc){let d=definitions.find(x=>x[0]===b.dataset.desc);alert(d?`${d[0]}\n\n${d[1]}`:'Description unavailable')}else if(b.dataset.addset){let id=b.dataset.addset;logs[id]??={exercise:b.dataset.ex};logs[id].sets??=[];logs[id].sets.push('');save();render()}else if(b.dataset.removeset){let id=b.dataset.removeset,idx=Number(b.dataset.idx);if(logs[id]&&Array.isArray(logs[id].sets)&&idx>=0&&idx<logs[id].sets.length){logs[id].sets.splice(idx,1);save();render()}}else if(b.dataset.timer){timerLabel=b.dataset.timer;timerMode=/rest|sec|minute|plank|bridge/i.test(timerLabel)?'countdown':'stopwatch';timerElapsed=0;timerRunning=false;tab='timer';render()}else if(b.dataset.test){let n=b.dataset.test,v=prompt(`Enter ${n} result (lb, reps, or mm:ss):`);if(v===null||!v.trim())return;v=v.trim();if(!/^(\d+(?:\.\d+)?|\d+:\d{1,2})$/.test(v)){alert('Use a number or mm:ss.');return}let t=get('roling-tests',{});t[n]??=[];t[n].push({value:v,date:new Date().toISOString().slice(0,10)});localStorage.setItem('roling-tests',JSON.stringify(t));render()}else if(b.dataset.mode){timerMode=b.dataset.mode;timerElapsed=0;timerRunning=false;render()}else if(b.dataset.preset){timerSeconds=+b.dataset.preset;timerMode='countdown';timerElapsed=0;timerRunning=false;render()}else if(b.id==='timer-start')startTimer();else if(b.id==='timer-reset'){timerElapsed=0;timerRunning=false;render()}else if(b.id==='timer-save'){let time=fmt(currentMs());let list=get('roling-times',[]);list.push({date:new Date().toISOString().slice(0,10),label:timerLabel||'Stopwatch',time});localStorage.setItem('roling-times',JSON.stringify(list));timerElapsed=currentMs();timerRunning=false;render()}else if(b.id==='export'){let data={logs,completed,userNotes,baseline,tests:get('roling-tests',{}),times:get('roling-times',[])};let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});let a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='roling-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}else if(b.id==='restart'){week=1;session=1;localStorage.setItem('roling-week',week);localStorage.setItem('roling-session',session);tab='workout';render()}});
 document.addEventListener('input',e=>{let t=e.target;if(t.dataset.log){let id=t.dataset.log;logs[id]??={};logs[id].exercise=t.dataset.ex;logs[id].weight=t.value;save()}else if(t.dataset.extra){logs[t.dataset.extra].sets[+t.dataset.idx]=t.value;save()}else if(t.id==='session-note'){logs[`${week}-${session}-note`]={text:t.value};save()}else if(t.id==='global-notes'){userNotes=t.value;save()}else if(t.id==='timer-seconds'){timerSeconds=Math.max(1,Number(t.value)||90);timerElapsed=0;timerRunning=false}});document.addEventListener('change',async e=>{let t=e.target;if(t.id==='complete'){completed[`${week}-${session}`]=t.checked;save()}else if(t.id==='import'&&t.files?.[0]){try{let d=JSON.parse(await t.files[0].text());if(!d.logs||!d.completed||!confirm('Replace all existing saved workout data?'))return;logs=d.logs;completed=d.completed;userNotes=d.userNotes||'';baseline=d.baseline||baseline;localStorage.setItem('roling-tests',JSON.stringify(d.tests||{}));localStorage.setItem('roling-times',JSON.stringify(d.times||[]));save();render();alert('Backup imported')}catch(err){alert('Invalid backup file')}}});setInterval(refreshClock,150);fetch('program.json').then(r=>r.json()).then(x=>{program=x;render()}).catch(()=>{main.innerHTML='<div class="card">Could not load program data. Open the app from a web server or installed home-screen app.</div>'});if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+
+// Version 6: cleaner exercise layout
+function blockHTML(b, bi) {
+  return `<section class="card workout-section">
+    <h3 class="${/^(Warm Up|Training)$/i.test(b.title)
+      ? 'section-heading' : 'subsection-heading'}">${esc(b.title)}</h3>
+    ${b.lines.map((line, i) => {
+      const id = key(week, session, bi, i);
+      const kind = lineKind(line);
+      const heading = /^\s*(?:\d+\s*(?:Rounds?|Sets?)|(?:\d+\)\s*)?\d+\s*Rounds?)\s*$/i.test(line);
+      if (heading) return `<h4 class="subsection-heading">${esc(line)}</h4>`;
+
+      const stretch = /\b(stretch|dislocates|mobility|mobilization|foam roll|cool.?down)\b/i.test(line);
+      const active = kind === 'exercise' && !stretch;
+      const ex = active ? classify(line) : null;
+      const d = active ? findDef(line) : null;
+      const timed = active && /\b(sec|seconds|minute|minutes|min|800m|400m|200m|for time|SDC|plank|bridge|run|shuttle|AMRAP)\b/i.test(line);
+      const l = logs[id] || {};
+
+      const controls = active ? `
+        <div class="v6-actions">
+          ${d ? `<a class="exerciseLink" href="${demo(d[0])}"
+            target="_blank" rel="noopener">Demo</a>
+            <button class="mini" data-desc="${esc(d[0])}">?</button>` : ''}
+          ${timed ? `<button class="mini" data-timer="${esc(line)}">◷ Timer</button>` : ''}
+        </div>` : '';
+
+      const weights = ex ? `
+        <div class="inputline">
+          <label class="muted">${esc(ex)} · weight (lb)</label>
+          <input type="number" inputmode="decimal" min="0" step="5"
+            value="${esc(l.weight ?? '')}" data-log="${id}"
+            data-ex="${esc(ex)}" placeholder="lb">
+          <button class="mini" data-addset="${id}"
+            data-ex="${esc(ex)}">+ set</button>
+        </div>
+        ${(l.sets || []).map((v, j) => `
+          <div class="inputline">
+            <label>Set ${j + 2}</label>
+            <input type="number" inputmode="decimal" min="0" step="5"
+              value="${esc(v)}" data-extra="${id}" data-idx="${j}">
+            <button class="mini remove-set" data-removeset="${id}"
+              data-idx="${j}">✕ Remove</button>
+          </div>`).join('')}` : '';
+
+      return `<div class="v6-exercise ${active ? 'exercise-item' : 'instruction-item'}">
+        <div class="v6-description">${active ? '<span class="exercise-bullet">•</span> ' : ''}${esc(line)}</div>
+        ${controls}
+        ${weights}
+      </div>`;
+    }).join('')}
+  </section>`;
+}
+
+// Version 6: remove dashed separators and keep controls below text
+const v6style = document.createElement('style');
+v6style.textContent = `
+  .v6-exercise {
+    border: 0 !important;
+    border-bottom: 0 !important;
+    border-top: 0 !important;
+    border-style: none !important;
+    padding: 9px 0;
+  }
+  .v6-description {
+    display: block;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .v6-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 5px 0 0 15px;
+  }
+  .v6-exercise .inputline {
+    margin-top: 6px;
+  }
+  .v6-exercise input[type="number"] {
+    max-width: 78px;
+  }
+`;
+document.head.appendChild(v6style);
