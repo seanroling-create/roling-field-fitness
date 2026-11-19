@@ -9,8 +9,52 @@ function lineKind(line){
  if(/^Rest\b/i.test(t))return 'instruction';
  return 'exercise';
 }
-function blockHTML(b,bi){return `<section class="card workout-section"><h3 class="${/^(Warm Up|Training)$/i.test(b.title)?'section-heading':'subsection-heading'}">${esc(b.title)}</h3>${b.lines.map((line,i)=>{let id=key(week,session,bi,i),d=findDef(line),ex=classify(line),l=logs[id]||{},reps=extractSets(line);let control=ex?`<div class="inputline"><label class="muted">${esc(ex)} · set weight (lb)</label><input aria-label="${esc(ex)} weight" type="number" inputmode="decimal" min="0" step="5" value="${esc(l.weight??'')}" data-log="${id}" data-ex="${esc(ex)}" placeholder="lb"><button class="mini" data-addset="${id}" data-ex="${esc(ex)}">+ set</button></div>${(l.sets||[]).map((v,j)=>`<div class="inputline"><label>Set ${j+2} weight</label><input type="number" inputmode="decimal" min="0" step="5" value="${esc(v)}" data-extra="${id}" data-idx="${j}"><button class="mini remove-set" data-removeset="${id}" data-idx="${j}" aria-label="Remove set ${j+2}" title="Remove this set">✕ Remove</button></div>`).join('')}`:'';let timed=/\b(sec|seconds|minute|minutes|\bmin\b|\b800m\b|\b400m\b|\b200m\b|for time|SDC|plank|bridge|run|shuttle|AMRAP)\b/i.test(line);if(bi===0 && i===0 && /^\s*\d+\s+Rounds?\s*$/i.test(line))return `<h4 class="subsection-heading warmup-rounds">${esc(line)}</h4>`;return `<div class="line ${lineKind(line)==="exercise"?"exercise-item":lineKind(line)==="continuation"?"continuation-item":"instruction-item"}">${lineKind(line)==="exercise"?`<span class="exercise-bullet" aria-hidden="true">•</span>`:""}${esc(line)} ${d?`<a class="exerciseLink" href="${demo(d[0])}" target="_blank" rel="noopener">Demo</a> <button class="mini" data-desc="${esc(d[0])}">?</button>`:''}${timed?`<button class="mini" data-timer="${esc(line)}">◷</button>`:''}</div>${control}`}).join('')}</section>`}
-function renderWorkout(){let item=program.find(x=>x.week===week&&x.session===session);main.innerHTML=`<h2>Today's training</h2><div class="weekbar">${Array.from({length:8},(_,i)=>`<button class="${week===i+1?'active':''}" data-week="${i+1}">W${i+1}</button>`).join('')}</div><div class="weekbar">${['Mon · 1','Tue · 2','Thu · 3','Fri · 4','Sat · 5'].map((x,i)=>`<button class="${session===i+1?'active':''}" data-session="${i+1}">${x}</button>`).join('')}</div><div class="card"><div class="eyebrow">CYCLE 1 · WEEK ${week} · SESSION ${session}</div><h2>${['Complex strength','SDC + core + easy run','Barbell + HRPU + intervals','Power + conditioning','Aerobic running'][session-1]}</h2><p class="muted">Target: 45–60 min. Wednesday and Sunday are recovery days. Use the original prescriptions below.</p><label><input class="check" type="checkbox" id="complete" ${completed[`${week}-${session}`]?'checked':''}> Session completed</label></div>${item.blocks.map(blockHTML).join('')}<div class="card workout-section"><h3 class="section-heading">Session Notes</h3><textarea id="session-note" placeholder="How did the session feel? Technique, effort, substitutions...">${esc((logs[`${week}-${session}-note`]||{}).text||'')}</textarea></div><p class="notice">Weights entered are stored on this device. For multiple sets, use “+ set”; your highest logged load for each exercise updates Records automatically. External demo links open YouTube search results, not individually verified videos.</p>`}
+function isStretch(line){return /\b(stretch|shoulder dislocates|mobility|squat to stand|lat \+ pec)\b/i.test(line)}
+function isComplexDescription(line){return /^(?:Mr\. Spectacular|Craig Special|Renegade Man Maker|Man Maker|Scotty Bob):/i.test(line.trim())}
+function makeWorkoutRows(block){
+ const rows=[];
+ block.lines.forEach((line,index)=>{
+  if(rows.length&&lineKind(line)==='continuation')rows[rows.length-1].text+=' '+line.trim();
+  else rows.push({text:line,index});
+ });
+ return rows;
+}
+function prepareWorkout(item){
+ const blocks=item.blocks.map(b=>({...b,rows:makeWorkoutRows(b)}));
+ // Attach movement explanations to their actual exercise, even when the source
+ // puts the explanation at the end of a different round.
+ const explanations=[];
+ blocks.forEach((block,bi)=>block.rows.forEach(row=>{
+  if(isComplexDescription(row.text))explanations.push({bi,row,name:row.text.split(':')[0].trim()});
+ }));
+ explanations.forEach(({bi,row,name})=>{
+  let target=null;
+  for(let i=0;i<blocks.length;i++)for(const candidate of blocks[i].rows){
+   if(candidate===row||isComplexDescription(candidate.text))continue;
+   if(candidate.text.toLowerCase().includes(name.toLowerCase())&&lineKind(candidate.text)==='exercise'){
+    target=candidate;break;
+   }
+  }
+  if(target){target.explanation=row.text;blocks[bi].rows=blocks[bi].rows.filter(r=>r!==row)}
+ });
+ blocks.forEach(block=>block.rows=block.rows.filter(r=>!/^For full official SDC sequence,/i.test(r.text.trim())));
+ return blocks;
+}
+function blockHTML(b,bi){
+ return `<section class="card workout-section"><h3 class="${/^(Warm Up|Training)$/i.test(b.title)?'section-heading':'subsection-heading'}">${esc(b.title)}</h3>${b.rows.map(({text:line,index:i,explanation})=>{
+  const id=key(week,session,bi,i),kind=lineKind(line),stretch=isStretch(line);
+  if(bi===0&&i===0&&/^\s*\d+\s+Rounds?\s*$/i.test(line))return `<h4 class="subsection-heading warmup-rounds">${esc(line)}</h4>`;
+  const isNote=kind==='note'||kind==='instruction'||kind==='continuation';
+  const d=!isNote?findDef(line):null;
+  const ex=!isNote&&!stretch?classify(line):null;
+  const l=logs[id]||{};
+  const control=ex?`<div class="inputline"><label class="muted">${esc(ex)} · weight (lb)</label><input aria-label="${esc(ex)} weight" type="number" inputmode="decimal" min="0" step="5" value="${esc(l.weight??'')}" data-log="${id}" data-ex="${esc(ex)}" placeholder="lb"><button class="mini" data-addset="${id}" data-ex="${esc(ex)}">+ set</button></div>${(l.sets||[]).map((v,j)=>`<div class="inputline"><label>Set ${j+2} weight</label><input type="number" inputmode="decimal" min="0" step="5" value="${esc(v)}" data-extra="${id}" data-idx="${j}"><button class="mini remove-set" data-removeset="${id}" data-idx="${j}" aria-label="Remove set ${j+2}">✕ Remove</button></div>`).join('')}`:'';
+  const timed=!isNote&&!stretch&&/\b(sec|seconds|minute|minutes|min|800m|400m|200m|for time|SDC|plank|bridge|run|shuttle|AMRAP)\b/i.test(line);
+  const buttons=!isNote&&!stretch?`${d?`<a class="exerciseLink" href="${demo(d[0])}" target="_blank" rel="noopener">Demo</a><button class="mini" data-desc="${esc(d[0])}">?</button>`:''}${timed?`<button class="mini" data-timer="${esc(line)}">◷ Timer</button>`:''}`:'';
+  return `<div class="exercise-group"><div class="line ${isNote?'instruction-item':'exercise-item'}">${isNote?'':'<span class="exercise-bullet" aria-hidden="true">•</span>'}<span class="v7-description">${esc(line)}</span></div>${buttons?`<div class="v7-actions">${buttons}</div>`:''}${control}${explanation?`<div class="v7-explanation">${esc(explanation)}</div>`:''}</div>`;
+ }).join('')}</section>`;
+}
+function renderWorkout(){let item=program.find(x=>x.week===week&&x.session===session);main.innerHTML=`<h2>Today's training</h2><div class="weekbar">${Array.from({length:8},(_,i)=>`<button class="${week===i+1?'active':''}" data-week="${i+1}">W${i+1}</button>`).join('')}</div><div class="weekbar">${['Mon · 1','Tue · 2','Thu · 3','Fri · 4','Sat · 5'].map((x,i)=>`<button class="${session===i+1?'active':''}" data-session="${i+1}">${x}</button>`).join('')}</div><div class="card"><div class="eyebrow">CYCLE 1 · WEEK ${week} · SESSION ${session}</div><h2>${['Complex strength','SDC + core + easy run','Barbell + HRPU + intervals','Power + conditioning','Aerobic running'][session-1]}</h2><p class="muted">Target: 45–60 min. Wednesday and Sunday are recovery days. Use the original prescriptions below.</p><label><input class="check" type="checkbox" id="complete" ${completed[`${week}-${session}`]?'checked':''}> Session completed</label></div>${prepareWorkout(item).map(blockHTML).join('')}<div class="card workout-section"><h3 class="section-heading">Session Notes</h3><textarea id="session-note" placeholder="How did the session feel? Technique, effort, substitutions...">${esc((logs[`${week}-${session}-note`]||{}).text||'')}</textarea></div><p class="notice">Weights entered are stored on this device. For multiple sets, use “+ set”; your highest logged load for each exercise updates Records automatically. External demo links open YouTube search results, not individually verified videos.</p>`}
 function workoutLocation(k){let m=/^(\d+)-(\d+)-(\d+)-(\d+)$/.exec(k);if(!m)return k;let w=Number(m[1]),day=Number(m[2]),block=Number(m[3]);let item=program.find(x=>x.week===w&&x.session===day);let title=item?.blocks?.[block]?.title||'Exercise';return `Week ${w} · ${['Mon','Tue','Thu','Fri','Sat'][day-1]||'Session '+day} · ${title}`}function records(){let by={};Object.entries(logs).forEach(([k,v])=>{if(v.exercise){let vals=[v.weight,...(v.sets||[])].map(Number).filter(n=>Number.isFinite(n)&&n>0);if(vals.length){let max=Math.max(...vals);if(!by[v.exercise]||max>by[v.exercise].value)by[v.exercise]={value:max,key:k}}}});let tests=['3RM Deadlift','HRPU','SDC','Plank','2-mile Run'];main.innerHTML=`<h2>Personal records</h2><p class="muted">Best entered weights update automatically. AFT results are entered separately below; the best is selected by event type.</p><div class="grid">${Object.entries(by).sort((a,b)=>a[0].localeCompare(b[0])).map(([n,v])=>`<div class="stat"><small>${esc(n)}</small><b>${v.value} lb</b><small>${esc(workoutLocation(v.key))}</small></div>`).join('')||'<p>No weights logged yet.</p>'}</div><h2>AFT event records</h2>${tests.map(n=>{let entries=(get('roling-tests',{})[n]||[]);let best=entries.slice().sort((a,b)=>{let val=x=>x.includes(':')?Number(x.split(':')[0])*60+Number(x.split(':')[1]):Number(x);return ['SDC','2-mile Run'].includes(n)?val(a.value)-val(b.value):val(b.value)-val(a.value)})[0];return `<div class="card"><div class="row"><div><b>${n}</b><div class="muted">Starting: ${esc(baseline[n]||'—')} · Best: ${esc(best?.value||'—')}</div></div><button data-test="${esc(n)}">+ Result</button></div></div>`}).join('')}<p class="notice">Personal records reflect entered data, not independently verified official AFT scores. Weight PRs are highest logged training loads regardless of reps.</p>`}
 let timerMode='stopwatch',timerSeconds=90,timerRunning=false,timerStart=0,timerElapsed=0,timerTick=null,timerLabel='';function currentMs(){return timerElapsed+(timerRunning?performance.now()-timerStart:0)}function fmt(ms){let v=Math.max(0,Math.floor(ms/1000));return `${String(Math.floor(v/60)).padStart(2,'0')}:${String(v%60).padStart(2,'0')}`}function timerPage(){main.innerHTML=`<h2>Workout timer</h2><div class="card"><div class="row"><button data-mode="stopwatch" class="${timerMode==='stopwatch'?'active':''}">Stopwatch</button><button data-mode="countdown" class="${timerMode==='countdown'?'active':''}">Countdown</button></div><p class="muted">${esc(timerLabel||'Time an exercise, interval, plank, or rest period.')}</p><div class="timer" id="clock">00:00</div><div class="timercontrols"><button class="primary" id="timer-start">${timerRunning?'Pause':'Start'}</button><button id="timer-reset">Reset</button><button id="timer-save">Save time</button></div><div class="row" style="margin-top:20px"><label>Countdown seconds</label><input id="timer-seconds" type="number" min="1" max="7200" value="${timerSeconds}"></div><div class="weekbar">${[30,45,60,75,90,105,120,180,300].map(v=>`<button data-preset="${v}">${v}s</button>`).join('')}</div></div><div class="card"><h3>Recent timed results</h3>${(get('roling-times',[]).slice(-10).reverse()).map(x=>`<div class="line">${esc(x.date)} · ${esc(x.label)} · <b>${esc(x.time)}</b></div>`).join('')||'No timed results yet.'}</div>`;refreshClock()}
 function refreshClock(){let el=$('clock');if(!el)return;let ms=currentMs();el.textContent=fmt(timerMode==='countdown'?timerSeconds*1000-ms:ms);if(timerMode==='countdown'&&timerRunning&&ms>=timerSeconds*1000){timerRunning=false;timerElapsed=timerSeconds*1000;el.textContent='00:00';if(navigator.vibrate)navigator.vibrate([200,100,200]);$('timer-start').textContent='Start'}}function startTimer(){if(timerRunning){timerElapsed=currentMs();timerRunning=false}else{if(timerMode==='countdown'&&timerElapsed>=timerSeconds*1000)timerElapsed=0;timerStart=performance.now();timerRunning=true}timerPage()}
@@ -19,331 +63,3 @@ function settings(){main.innerHTML=`<h2>Data & installation</h2><div class="card
 function render(){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));if(tab==='workout')renderWorkout();else if(tab==='records')records();else if(tab==='timer')timerPage();else if(tab==='notes')notesPage();else settings()}
 document.addEventListener('click',e=>{let b=e.target.closest('button');if(!b)return;if(b.dataset.tab){tab=b.dataset.tab;render()}else if(b.dataset.week){week=+b.dataset.week;localStorage.setItem('roling-week',week);render()}else if(b.dataset.session){session=+b.dataset.session;localStorage.setItem('roling-session',session);render()}else if(b.dataset.desc){let d=definitions.find(x=>x[0]===b.dataset.desc);alert(d?`${d[0]}\n\n${d[1]}`:'Description unavailable')}else if(b.dataset.addset){let id=b.dataset.addset;logs[id]??={exercise:b.dataset.ex};logs[id].sets??=[];logs[id].sets.push('');save();render()}else if(b.dataset.removeset){let id=b.dataset.removeset,idx=Number(b.dataset.idx);if(logs[id]&&Array.isArray(logs[id].sets)&&idx>=0&&idx<logs[id].sets.length){logs[id].sets.splice(idx,1);save();render()}}else if(b.dataset.timer){timerLabel=b.dataset.timer;timerMode=/rest|sec|minute|plank|bridge/i.test(timerLabel)?'countdown':'stopwatch';timerElapsed=0;timerRunning=false;tab='timer';render()}else if(b.dataset.test){let n=b.dataset.test,v=prompt(`Enter ${n} result (lb, reps, or mm:ss):`);if(v===null||!v.trim())return;v=v.trim();if(!/^(\d+(?:\.\d+)?|\d+:\d{1,2})$/.test(v)){alert('Use a number or mm:ss.');return}let t=get('roling-tests',{});t[n]??=[];t[n].push({value:v,date:new Date().toISOString().slice(0,10)});localStorage.setItem('roling-tests',JSON.stringify(t));render()}else if(b.dataset.mode){timerMode=b.dataset.mode;timerElapsed=0;timerRunning=false;render()}else if(b.dataset.preset){timerSeconds=+b.dataset.preset;timerMode='countdown';timerElapsed=0;timerRunning=false;render()}else if(b.id==='timer-start')startTimer();else if(b.id==='timer-reset'){timerElapsed=0;timerRunning=false;render()}else if(b.id==='timer-save'){let time=fmt(currentMs());let list=get('roling-times',[]);list.push({date:new Date().toISOString().slice(0,10),label:timerLabel||'Stopwatch',time});localStorage.setItem('roling-times',JSON.stringify(list));timerElapsed=currentMs();timerRunning=false;render()}else if(b.id==='export'){let data={logs,completed,userNotes,baseline,tests:get('roling-tests',{}),times:get('roling-times',[])};let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});let a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='roling-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}else if(b.id==='restart'){week=1;session=1;localStorage.setItem('roling-week',week);localStorage.setItem('roling-session',session);tab='workout';render()}});
 document.addEventListener('input',e=>{let t=e.target;if(t.dataset.log){let id=t.dataset.log;logs[id]??={};logs[id].exercise=t.dataset.ex;logs[id].weight=t.value;save()}else if(t.dataset.extra){logs[t.dataset.extra].sets[+t.dataset.idx]=t.value;save()}else if(t.id==='session-note'){logs[`${week}-${session}-note`]={text:t.value};save()}else if(t.id==='global-notes'){userNotes=t.value;save()}else if(t.id==='timer-seconds'){timerSeconds=Math.max(1,Number(t.value)||90);timerElapsed=0;timerRunning=false}});document.addEventListener('change',async e=>{let t=e.target;if(t.id==='complete'){completed[`${week}-${session}`]=t.checked;save()}else if(t.id==='import'&&t.files?.[0]){try{let d=JSON.parse(await t.files[0].text());if(!d.logs||!d.completed||!confirm('Replace all existing saved workout data?'))return;logs=d.logs;completed=d.completed;userNotes=d.userNotes||'';baseline=d.baseline||baseline;localStorage.setItem('roling-tests',JSON.stringify(d.tests||{}));localStorage.setItem('roling-times',JSON.stringify(d.times||[]));save();render();alert('Backup imported')}catch(err){alert('Invalid backup file')}}});setInterval(refreshClock,150);fetch('program.json').then(r=>r.json()).then(x=>{program=x;render()}).catch(()=>{main.innerHTML='<div class="card">Could not load program data. Open the app from a web server or installed home-screen app.</div>'});if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
-
-// Version 6: cleaner exercise layout
-function blockHTML(b, bi) {
-  return `<section class="card workout-section">
-    <h3 class="${/^(Warm Up|Training)$/i.test(b.title)
-      ? 'section-heading' : 'subsection-heading'}">${esc(b.title)}</h3>
-    ${b.lines.map((line, i) => {
-      const id = key(week, session, bi, i);
-      const kind = lineKind(line);
-      const heading = /^\s*(?:\d+\s*(?:Rounds?|Sets?)|(?:\d+\)\s*)?\d+\s*Rounds?)\s*$/i.test(line);
-      if (heading) return `<h4 class="subsection-heading">${esc(line)}</h4>`;
-
-      const stretch = /\b(stretch|dislocates|mobility|mobilization|foam roll|cool.?down)\b/i.test(line);
-      const active = kind === 'exercise' && !stretch;
-      const ex = active ? classify(line) : null;
-      const d = active ? findDef(line) : null;
-      const timed = active && /\b(sec|seconds|minute|minutes|min|800m|400m|200m|for time|SDC|plank|bridge|run|shuttle|AMRAP)\b/i.test(line);
-      const l = logs[id] || {};
-
-      const controls = active ? `
-        <div class="v6-actions">
-          ${d ? `<a class="exerciseLink" href="${demo(d[0])}"
-            target="_blank" rel="noopener">Demo</a>
-            <button class="mini" data-desc="${esc(d[0])}">?</button>` : ''}
-          ${timed ? `<button class="mini" data-timer="${esc(line)}">◷ Timer</button>` : ''}
-        </div>` : '';
-
-      const weights = ex ? `
-        <div class="inputline">
-          <label class="muted">${esc(ex)} · weight (lb)</label>
-          <input type="number" inputmode="decimal" min="0" step="5"
-            value="${esc(l.weight ?? '')}" data-log="${id}"
-            data-ex="${esc(ex)}" placeholder="lb">
-          <button class="mini" data-addset="${id}"
-            data-ex="${esc(ex)}">+ set</button>
-        </div>
-        ${(l.sets || []).map((v, j) => `
-          <div class="inputline">
-            <label>Set ${j + 2}</label>
-            <input type="number" inputmode="decimal" min="0" step="5"
-              value="${esc(v)}" data-extra="${id}" data-idx="${j}">
-            <button class="mini remove-set" data-removeset="${id}"
-              data-idx="${j}">✕ Remove</button>
-          </div>`).join('')}` : '';
-
-      return `<div class="v6-exercise ${active ? 'exercise-item' : 'instruction-item'}">
-        <div class="v6-description">${active ? '<span class="exercise-bullet">•</span> ' : ''}${esc(line)}</div>
-        ${controls}
-        ${weights}
-      </div>`;
-    }).join('')}
-  </section>`;
-}
-
-// Version 6: remove dashed separators and keep controls below text
-const v6style = document.createElement('style');
-v6style.textContent = `
-  .v6-exercise {
-    border: 0 !important;
-    border-bottom: 0 !important;
-    border-top: 0 !important;
-    border-style: none !important;
-    padding: 9px 0;
-  }
-  .v6-description {
-    display: block;
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-  }
-  .v6-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    margin: 5px 0 0 15px;
-  }
-  .v6-exercise .inputline {
-    margin-top: 6px;
-  }
-  .v6-exercise input[type="number"] {
-    max-width: 78px;
-  }
-`;
-document.head.appendChild(v6style);
-
-// Version 6.1: restore exercise bullets and remove dashed lines
-function fixWorkoutFormatting() {
-  document.querySelectorAll('.v6-exercise').forEach(item => {
-    const description = item.querySelector('.v6-description');
-    if (!description) return;
-
-    const text = description.textContent.trim().replace(/^•\s*/, '');
-    const isRest = /^Rest\b/i.test(text);
-    const isInstruction = /^(?:For full official|Next week:|Use |After Week|One complete|These are|Official |Note:|Complete sequence|Running paces\.|Between rounds\.)/i.test(text);
-
-    if (!isRest && !isInstruction) {
-      item.classList.add('exercise-item');
-      item.classList.remove('instruction-item');
-      if (!description.querySelector('.exercise-bullet')) {
-        const bullet = document.createElement('span');
-        bullet.className = 'exercise-bullet';
-        bullet.textContent = '•';
-        bullet.setAttribute('aria-hidden', 'true');
-        description.prepend(bullet, ' ');
-      }
-    }
-  });
-}
-
-const v61style = document.createElement('style');
-v61style.textContent = `
-  .v6-exercise,
-  .v6-exercise .inputline,
-  .v6-exercise .v6-description,
-  .v6-exercise .v6-actions {
-    border: none !important;
-    border-top: none !important;
-    border-bottom: none !important;
-    box-shadow: none !important;
-  }
-  .v6-exercise.exercise-item .v6-description {
-    color: inherit !important;
-    opacity: 1 !important;
-  }
-`;
-document.head.appendChild(v61style);
-
-const originalRenderWorkoutV61 = renderWorkout;
-renderWorkout = function() {
-  originalRenderWorkoutV61();
-  fixWorkoutFormatting();
-};
-fixWorkoutFormatting();
-
-// Version 6.2: join split descriptions and hide redundant SDC note
-function tidyWorkoutDescriptions() {
-  document.querySelectorAll('.workout-section').forEach(section => {
-    const items = Array.from(section.querySelectorAll('.v6-exercise'));
-
-    items.forEach(item => {
-      if (!item.isConnected) return;
-
-      const desc = item.querySelector('.v6-description');
-      if (!desc) return;
-
-      const text = desc.textContent.trim().replace(/^•\s*/, '');
-
-      // Hide the redundant SDC reference.
-      if (/^For full official SDC sequence\b/i.test(text)) {
-        item.remove();
-        return;
-      }
-
-      // Join a continuation to the preceding exercise or note.
-      const continuation =
-        /^(?:complete sequence\s*=|running paces\b)/i.test(text);
-
-      if (!continuation) return;
-
-      const previous = item.previousElementSibling;
-      if (!previous || !previous.classList.contains('v6-exercise')) return;
-
-      const previousDesc = previous.querySelector('.v6-description');
-      if (!previousDesc) return;
-
-      previousDesc.append(
-        document.createTextNode(' ' + text)
-      );
-
-      item.remove();
-    });
-
-    // Join "One" with "complete sequence = 1 rep."
-    // The previous loop handles the continuation without
-    // changing any saved workout data.
-  });
-}
-
-const previousRenderWorkoutV62 = renderWorkout;
-renderWorkout = function() {
-  previousRenderWorkoutV62();
-  tidyWorkoutDescriptions();
-};
-
-tidyWorkoutDescriptions();
-
-// Version 6.3: fix explanatory notes and SDC layout
-function refineWorkoutLayoutV63() {
-  document.querySelectorAll('.workout-section').forEach(section => {
-    const items = Array.from(
-      section.querySelectorAll('.v6-exercise')
-    );
-
-    items.forEach(item => {
-      if (!item.isConnected) return;
-
-      const desc = item.querySelector('.v6-description');
-      if (!desc) return;
-
-      const text = desc.textContent
-        .trim()
-        .replace(/^•\s*/, '');
-
-      // Explanations of named complexes are notes,
-      // not additional exercise requirements.
-      if (/^(?:Mr\. Spectacular|Craig Special|Man Maker|Renegade Man Maker|Scotty Bob)\s*:/i.test(text)) {
-        item.classList.remove('exercise-item');
-        item.classList.add('instruction-item', 'v63-note');
-
-        desc.querySelector('.exercise-bullet')?.remove();
-        item.querySelector('.v6-actions')?.remove();
-        item.querySelectorAll('.inputline').forEach(el => el.remove());
-      }
-
-      // Keep the entire SDC description before its controls.
-      if (/^SDC PARTIAL\b/i.test(text)) {
-        const next = item.nextElementSibling;
-        const nextDesc = next?.querySelector('.v6-description');
-        const nextText = nextDesc?.textContent
-          .trim()
-          .replace(/^•\s*/, '') || '';
-
-        if (/^out\/back\)/i.test(nextText)) {
-          desc.append(document.createTextNode(' ' + nextText));
-          next.remove();
-        }
-      }
-    });
-  });
-}
-
-const v63style = document.createElement('style');
-v63style.textContent = `
-  .v63-note .v6-description {
-    color: #a5b4bd !important;
-    opacity: 1 !important;
-    font-size: 0.94em;
-    line-height: 1.5;
-  }
-  .v63-note {
-    padding-top: 4px;
-    padding-bottom: 8px;
-  }
-`;
-document.head.appendChild(v63style);
-
-const previousRenderWorkoutV63 = renderWorkout;
-renderWorkout = function() {
-  previousRenderWorkoutV63();
-  refineWorkoutLayoutV63();
-};
-
-refineWorkoutLayoutV63();
-
-// Version 6.4: place complex descriptions beside their exercises
-function positionComplexDescriptionsV64() {
-  const names = [
-    'Mr. Spectacular',
-    'Craig Special',
-    'Man Maker',
-    'Renegade Man Maker',
-    'Scotty Bob'
-  ];
-
-  document.querySelectorAll('.workout-section').forEach(section => {
-    const items = Array.from(
-      section.querySelectorAll('.v6-exercise')
-    );
-
-    items.forEach(note => {
-      if (!note.classList.contains('v63-note')) return;
-
-      const description = note.querySelector('.v6-description');
-      if (!description) return;
-
-      const noteText = description.textContent.trim();
-      const name = names.find(n =>
-        noteText.toLowerCase().startsWith(n.toLowerCase() + ':')
-      );
-      if (!name) return;
-
-      // Look for the actual prescribed exercise in the same section.
-      const exercise = items.find(item => {
-        if (item === note || item.classList.contains('v63-note')) {
-          return false;
-        }
-
-        const text = item.querySelector('.v6-description')
-          ?.textContent.trim() || '';
-
-        return text.toLowerCase().includes(name.toLowerCase())
-          && !text.toLowerCase().startsWith(name.toLowerCase() + ':');
-      });
-
-      if (!exercise) return;
-
-      // Put the explanation immediately after the exercise text,
-      // before its Demo and weight controls.
-      const exerciseDescription = exercise.querySelector('.v6-description');
-
-      if (exerciseDescription) {
-        exerciseDescription.insertAdjacentElement('afterend', description);
-        description.classList.add('v64-complex-note');
-        note.remove();
-      }
-    });
-  });
-}
-
-const v64style = document.createElement('style');
-v64style.textContent = `
-  .v64-complex-note {
-    color: #a5b4bd !important;
-    opacity: 1 !important;
-    font-size: 0.88em;
-    line-height: 1.5;
-    margin: 7px 0 5px 15px;
-  }
-`;
-document.head.appendChild(v64style);
-
-const previousRenderWorkoutV64 = renderWorkout;
-renderWorkout = function() {
-  previousRenderWorkoutV64();
-  positionComplexDescriptionsV64();
-};
-
-positionComplexDescriptionsV64();
