@@ -1,13 +1,5 @@
-ROLING / AFT UPDATE v3
+Roling Field Fitness v4 — visual hierarchy update.
 
-Changes:
-- Remove button on every added set; deleting a set updates records automatically.
-- Records show readable week/day/exercise-block locations.
-- Dumbbell-only app icon (no arcs or circle).
-- High-contrast Warm Up, Training, and Session Notes headings.
+Warm Up, Training, and Session Notes remain the most prominent gold section banners. Warm-up round counts (such as 2 Rounds) and numbered training blocks (such as 1) 5 Rounds) now share a matching medium-prominence teal/gold heading style. Individual exercises remain ordinary text.
 
-Samsung / GitHub Pages update:
-1. In the existing GitHub repository, upload/replace the contents of this roling_app folder at the repository ROOT (not a nested folder).
-2. Commit the changes to main. GitHub Pages redeploys automatically.
-3. Reopen your installed app. If the old version persists, close/reopen after a minute. Android may cache the old icon; remove and reinstall the home-screen app if the icon does not update.
-4. Keep the same URL. The app does not intentionally clear or overwrite existing workout logs. Export a backup first for safety.
+Upload all files inside roling_app to the root of your existing GitHub repository and replace existing files. The service worker cache version has been updated to v4. Export a backup before updating; this release does not change workout record storage.
